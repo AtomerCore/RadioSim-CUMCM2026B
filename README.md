@@ -127,7 +127,9 @@ the simulator infers them from the position and channel parameters of
   the channel differs from the current one) + 5 s*. After a legal measure the
   current channel becomes the measured channel.
 - A legal `/clear` costs *move time + 3 s (no target found) or 5 s (success)*.
-  It never switches the direction-finder channel.
+  It never switches the direction-finder channel. The 5 s breaks down as 3 s
+  of optical precise location plus 2 s of laser clearance; when no target is
+  found, only the optical location step runs.
 - `virtual_time_s` is a JSON number with up to 6 decimal places.
 
 Worked example from the official specification (Attachment 2, Section 10):
@@ -288,10 +290,12 @@ Two possible results:
  "virtual_time_s": 196, "clear_result": "success"}
 ```
 
-The clearance radius is 20 m, regardless of the source's orientation. A
-source can be cleared only once; clearing it again returns
-`no_target_in_range`. The channel field targets the source to clear and never
-switches the direction finder.
+On a legal `/clear` the simulator first runs the optical detector for precise
+location (3 s); if a target is found within 20 m, the laser gun is fired
+immediately to clear it (2 s more). The clearance radius is 20 m, regardless
+of the source's orientation. A source can be cleared only once; clearing it
+again returns `no_target_in_range`. The channel field targets the source to
+clear and never switches the direction finder.
 
 ### POST /exit — leave the target area
 
@@ -545,4 +549,4 @@ together.
 
 ## License
 
-[MIT](LICENSE) © 2026 Atomer
+[MIT](LICENSE)
