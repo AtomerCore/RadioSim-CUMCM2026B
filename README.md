@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+Problem: [2026 CUMCM Problem B](https://www.mcm.edu.cn/html_cn/node/27b6e148f8113f09b0269f64a02629fb.html)
+
 A local replica of the official simulator for the 2026 CUMCM Problem B
 **"Rapid Automatic Location and Clearance of Radio Interference Sources"**.
 
