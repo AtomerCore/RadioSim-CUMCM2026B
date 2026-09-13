@@ -1,0 +1,2 @@
+# The simulator runs on the Python 3.9+ standard library alone;
+# there are no third-party packages to install.

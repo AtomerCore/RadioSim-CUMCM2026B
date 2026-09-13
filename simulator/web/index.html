@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>无线电干扰源环境模拟器（本地复刻版）</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="logo">📡</span>
+    <div>
+      <div class="title">无线电干扰源环境模拟器 <small>本地复刻版 · CUMCM 2026 B 题</small></div>
+      <div class="sub" id="hdr-info">接口 127.0.0.1:—</div>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <span class="pill warn hidden" id="pill-batch">批量跑测中</span>
+    <span class="pill" id="pill-interface">接口未开放</span>
+    <span class="pill pill-dim" id="pill-session">空闲</span>
+  </div>
+</header>
+
+<nav id="tabs">
+  <button class="tab active" data-tab="control">测试控制</button>
+  <button class="tab" data-tab="batch">批量跑测</button>
+  <button class="tab" data-tab="viz">可视化</button>
+  <button class="tab" data-tab="logs">测试日志</button>
+  <button class="tab" data-tab="settings">设置</button>
+</nav>
+
+<main>
+<!-- ============================ 测试控制 ============================ -->
+<section id="tab-control" class="tabpane active">
+
+  <div id="module-cards" class="cards">
+    <div class="card" data-problem="3" data-mode="practice">
+      <div class="card-head"><span class="tag tag-u">演练</span>问题 3 演练测试</div>
+      <p>全部为全向干扰源，数量 10–16 随机。不限次数，结束后显示干扰源数量。</p>
+      <button class="btn btn-primary btn-start">开始演练测试</button>
+    </div>
+    <div class="card" data-problem="4" data-mode="practice">
+      <div class="card-head"><span class="tag tag-u">演练</span>问题 4 演练测试</div>
+      <p>全向 + 定向干扰源混合，数量 10–16 随机。不限次数，结束后显示干扰源数量。</p>
+      <button class="btn btn-primary btn-start">开始演练测试</button>
+    </div>
+    <div class="card" data-problem="3" data-mode="formal">
+      <div class="card-head"><span class="tag tag-f">正式</span>问题 3 正式测试</div>
+      <p>全部为全向干扰源。共 <b class="attempts-left">—</b> 次机会，结束后生成行为日志。</p>
+      <button class="btn btn-danger btn-start">开始正式测试</button>
+    </div>
+    <div class="card" data-problem="4" data-mode="formal">
+      <div class="card-head"><span class="tag tag-f">正式</span>问题 4 正式测试</div>
+      <p>全向 + 定向干扰源混合。共 <b class="attempts-left">—</b> 次机会，结束后生成行为日志。</p>
+      <button class="btn btn-danger btn-start">开始正式测试</button>
+    </div>
+  </div>
+
+  <div id="active-panel" class="panel hidden">
+    <div class="panel-head">
+      <div>
+        <span class="tag" id="ap-mode">—</span>
+        <b id="ap-name">—</b>
+        <span class="dim">测试案例编码：</span><b id="ap-code" class="mono">—</b>
+      </div>
+      <button class="btn btn-danger" id="btn-abort">中止测试</button>
+    </div>
+
+    <div class="timer-grid">
+      <div class="timer"><label>倒计时</label><b id="tm-countdown">—</b></div>
+      <div class="timer"><label>窗口剩余（25 分钟）</label><b id="tm-window">—</b></div>
+      <div class="timer"><label>程序运行剩余（20 分钟）</label><b id="tm-program">—</b></div>
+      <div class="timer"><label>虚拟时间</label><b id="tm-virtual">—</b></div>
+    </div>
+
+    <div class="status-grid">
+      <div>机器狗接口：<b id="st-interface">—</b></div>
+      <div>机器狗位置：<b id="st-pos" class="mono">—</b></div>
+      <div>测向机频道：<b id="st-channel">—</b></div>
+      <div>检测次数：<b id="st-measures">0</b></div>
+      <div>清除成功 / 尝试：<b id="st-clears">0 / 0</b></div>
+      <div id="st-cleared-wrap" class="hidden">已清除 / 总数：<b id="st-cleared">—</b></div>
+    </div>
+
+    <h3>指令与反馈 <small class="dim" id="cmd-count"></small></h3>
+    <div class="table-wrap">
+      <table class="tbl" id="cmd-table">
+        <thead><tr>
+          <th style="width:90px">现实时间</th><th style="width:70px">虚拟时刻</th>
+          <th style="width:78px">指令</th><th style="width:130px">request_id</th>
+          <th style="width:150px">位置</th><th style="width:52px">频道</th>
+          <th>结果</th>
+        </tr></thead>
+        <tbody id="cmd-tbody"></tbody>
+      </table>
+      <div class="empty-hint" id="cmd-empty">等待机器狗请求…</div>
+    </div>
+  </div>
+
+  <div id="end-panel" class="panel hidden"></div>
+</section>
+
+<!-- ============================ 批量跑测 ============================ -->
+<section id="tab-batch" class="tabpane">
+
+  <div class="panel">
+    <div class="panel-head"><h3 style="margin:0">批量跑测配置</h3></div>
+    <div id="batch-lock" class="warn hidden">批量跑测进行中，配置不可修改。</div>
+    <fieldset id="batch-fieldset">
+      <div id="batch-groups"></div>
+      <div class="btn-row"><button class="btn" id="btn-batch-add-group">+ 添加分组</button></div>
+      <p class="dim small">每个分组指定问题、模式、局数与机器人程序命令，同一批量可混合多组（如问题 3 与问题 4 各跑若干局）。正式模式同样消耗正式测试次数。</p>
+
+      <h3>全局选项</h3>
+      <div class="form-row"><label>种子列表（可选）</label>
+        <input type="text" id="bt-seeds" placeholder="如 1,2,3 或留空每局随机">
+        <small>逗号/空格分隔，循环使用并逐局记录；相同种子生成相同案例，便于复现与对比不同机器人</small></div>
+      <div class="form-row3">
+        <div><label>每局超时（秒）</label><input type="number" id="bt-timeout" min="10" max="86400" placeholder="自动">
+          <small class="dim">留空 = 倒计时 + 窗口 + 60s</small></div>
+        <div><label>局间间隔（秒）</label><input type="number" id="bt-delay" min="0" max="600" step="0.5" value="2"></div>
+        <div><label>启动失败时</label><select id="bt-onerr">
+          <option value="continue">继续后续局</option>
+          <option value="stop">停止批量</option></select></div>
+      </div>
+      <p class="dim small">机器人程序按 shell 命令启动（如 <span class="mono">python my_robot.py</span> 或 exe 完整路径），并通过环境变量获知接入信息：
+        <span class="mono">SIMULATOR_PORT / SIMULATOR_BASE_URL / SIMULATOR_CASE_CODE / SIMULATOR_PROBLEM / SIMULATOR_MODE / SIMULATOR_SEED</span>。
+        机器人输出保存在 <span class="mono">data/batches/robot_logs/</span>，可在每局结果中查看。</p>
+    </fieldset>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn btn-primary" id="btn-batch-start">▶ 开始批量跑测</button>
+      <button class="btn btn-danger hidden" id="btn-batch-stop">■ 停止批量</button>
+      <span id="batch-msg" class="dim small"></span>
+    </div>
+  </div>
+
+  <div class="panel hidden" id="batch-live-panel">
+    <div class="panel-head">
+      <h3 style="margin:0">运行进度 <span class="dim small" id="bl-title"></span></h3>
+      <b class="mono" id="bl-progress-text">0 / 0</b>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="bl-fill"></div></div>
+    <div class="dim small" id="bl-current" style="margin-bottom:8px">—</div>
+    <div class="table-wrap" style="max-height:300px">
+      <table class="tbl">
+        <thead><tr>
+          <th style="width:36px">#</th><th style="width:90px">分组</th>
+          <th>案例编码</th><th style="width:96px">状态</th>
+          <th style="width:86px">清除</th><th style="width:64px">检测</th>
+          <th style="width:96px">虚拟时间(s)</th><th style="width:80px">耗时(s)</th>
+          <th>结束原因 / 错误</th><th style="width:70px">机器人日志</th>
+        </tr></thead>
+        <tbody id="bl-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel hidden" id="batch-result-panel"></div>
+
+  <div class="panel">
+    <div class="panel-head"><h3 style="margin:0">批量历史</h3>
+      <button class="btn" id="btn-batch-refresh">刷新</button></div>
+    <div class="table-wrap" style="max-height:260px;position:relative">
+      <table class="tbl">
+        <thead><tr>
+          <th>批次号</th><th>说明</th><th style="width:76px">局数</th>
+          <th style="width:96px">整体清除率</th><th style="width:86px">全清率</th>
+          <th style="width:80px">状态</th><th style="width:200px">操作</th>
+        </tr></thead>
+        <tbody id="bh-tbody"></tbody>
+      </table>
+      <div class="empty-hint" id="bh-empty">暂无批量跑测记录</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 可视化 ============================ -->
+<section id="tab-viz" class="tabpane">
+  <div class="viz-layout">
+    <div class="viz-main">
+      <canvas id="viz-canvas"></canvas>
+      <div class="viz-timeline">
+        <button class="btn" id="viz-live" title="跟随最新状态">● 实时</button>
+        <input type="range" id="viz-slider" min="0" max="0" value="0">
+        <button class="btn" id="viz-play">▶ 播放</button>
+        <select id="viz-speed">
+          <option value="2">2 事件/秒</option>
+          <option value="5" selected>5 事件/秒</option>
+          <option value="12">12 事件/秒</option>
+          <option value="30">30 事件/秒</option>
+        </select>
+        <span class="dim" id="viz-progress">—</span>
+      </div>
+    </div>
+    <aside class="viz-side">
+      <h3>图层</h3>
+      <label><input type="checkbox" id="vc-truth"> 显示干扰源真值</label>
+      <label><input type="checkbox" id="vc-coverage" checked> 覆盖范围（半径/扇形）</label>
+      <label><input type="checkbox" id="vc-rays" checked> 检测射线（示向度）</label>
+      <label><input type="checkbox" id="vc-trail" checked> 机器狗轨迹</label>
+      <label><input type="checkbox" id="vc-grid" checked> 网格与坐标轴</label>
+      <h3>视图</h3>
+      <div class="btn-row">
+        <button class="btn" id="viz-fit">适配全场</button>
+        <button class="btn" id="viz-follow">跟随机器狗</button>
+        <button class="btn" id="viz-zoom-in">放大 +</button>
+        <button class="btn" id="viz-zoom-out">缩小 −</button>
+      </div>
+      <div class="dim small">滚轮缩放 · 拖拽平移</div>
+      <h3>实时状态</h3>
+      <div id="viz-stats" class="viz-stats">无进行中的测试</div>
+      <h3>图例</h3>
+      <div id="viz-legend" class="legend"></div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================ 日志 ============================ -->
+<section id="tab-logs" class="tabpane">
+  <div class="panel">
+    <div class="panel-head"><h3 style="margin:0">测试日志</h3>
+      <div class="btn-row">
+        <button class="btn" id="btn-open-logs-folder" title="在系统文件管理器中打开日志目录">📂 打开日志文件夹</button>
+        <button class="btn" id="btn-clear-logs">🗑 清空全部日志</button>
+        <button class="btn" id="btn-refresh-logs">刷新</button>
+      </div></div>
+    <p class="dim">每局测试结束自动生成日志（含案例真值与完整指令序列）。点击导出下载 JSON 文件，或删除不需要的日志。</p>
+    <div class="table-wrap">
+      <table class="tbl">
+        <thead><tr>
+          <th>测试案例编码</th><th style="width:90px">问题</th><th style="width:70px">类型</th>
+          <th style="width:150px">结束时间</th><th style="width:110px">结束原因</th>
+          <th style="width:110px">已清除/总数</th><th style="width:110px">虚拟时间(s)</th>
+          <th style="width:130px">操作</th>
+        </tr></thead>
+        <tbody id="logs-tbody"></tbody>
+      </table>
+      <div class="empty-hint" id="logs-empty">暂无日志</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 设置 ============================ -->
+<section id="tab-settings" class="tabpane">
+  <div id="settings-lock" class="warn hidden">测试进行中，设置不可修改。</div>
+
+  <div class="settings-grid">
+    <div class="panel">
+      <h3>通用</h3>
+      <div class="form-row"><label>机器人接口端口</label><input type="number" id="cf-port" min="1" max="65535"><small>空闲时可修改，保存后生效</small></div>
+      <div class="form-row"><label>指令与反馈显示条数</label><input type="number" id="cf-display" min="100" max="5000" step="100"><small>100–5000，仅影响界面显示，不影响日志</small></div>
+
+      <h3>场地与干扰源生成</h3>
+      <div class="form-row"><label>目标区域半径（米）</label><input type="number" id="cf-arena" step="1"></div>
+      <div class="form-row3">
+        <div><label>干扰源个数下限</label><input type="number" id="cf-nmin" min="1" max="20"></div>
+        <div><label>干扰源个数上限</label><input type="number" id="cf-nmax" min="1" max="20"></div>
+        <div><label>频道范围</label><div class="range2"><input type="number" id="cf-chmin" min="1"> – <input type="number" id="cf-chmax" min="1"></div></div>
+      </div>
+      <div class="form-row3">
+        <div><label>有效接收半径下限（米）</label><input type="number" id="cf-rrmin"></div>
+        <div><label>有效接收半径上限（米）</label><input type="number" id="cf-rrmax"></div>
+        <div><label>示向度误差 ±（度）</label><input type="number" id="cf-err" step="0.1"></div>
+      </div>
+      <div class="form-row"><label>随机种子（可选）</label><input type="text" id="cf-seed" placeholder="留空则每局随机"><small>指定后每局生成相同案例，便于复现</small></div>
+
+      <h3>物理与计时（官方默认值）</h3>
+      <div class="form-row3">
+        <div><label>移动速度（米/秒）</label><input type="number" id="cf-speed" step="0.1"></div>
+        <div><label>检测耗时（秒）</label><input type="number" id="cf-measure" step="0.1"></div>
+        <div><label>切换频道耗时（秒）</label><input type="number" id="cf-switch" step="0.1"></div>
+      </div>
+      <div class="form-row3">
+        <div><label>清除·未发现（秒）</label><input type="number" id="cf-clearfail" step="0.1"></div>
+        <div><label>清除·成功（秒）</label><input type="number" id="cf-clearok" step="0.1"></div>
+        <div><label>近距离阈值（米）</label><input type="number" id="cf-near" step="0.1"></div>
+      </div>
+      <div class="form-row3">
+        <div><label>清除半径（米）</label><input type="number" id="cf-clearr" step="0.1"></div>
+        <div><label>初始频道</label><input type="number" id="cf-init-ch" min="1"></div>
+        <div></div>
+      </div>
+
+      <h3>测试流程时限</h3>
+      <div class="form-row3">
+        <div><label>开始倒计时（秒）</label><input type="number" id="cf-countdown" step="1"></div>
+        <div><label>测试窗口（秒）</label><input type="number" id="cf-window" step="1"></div>
+        <div><label>程序运行限时（秒）</label><input type="number" id="cf-maxreal" step="1"></div>
+      </div>
+      <div class="form-row3">
+        <div><label>虚拟世界限时（秒）</label><input type="number" id="cf-maxvirt" step="1"></div>
+        <div><label>正式测试次数</label><input type="number" id="cf-attempts" min="1" max="100"></div>
+        <div></div>
+      </div>
+
+      <h3>本地工具选项</h3>
+      <div class="form-row"><label>正式测试允许显示真值</label>
+        <select id="cf-reveal"><option value="true">允许（调试用）</option><option value="false">禁止（贴近官方）</option></select>
+        <small>演练测试始终可见；正式测试默认隐藏真值以贴近官方行为</small></div>
+      <div class="form-row"><label>重置正式测试次数</label>
+        <div class="btn-row">
+          <button class="btn" id="btn-reset-p3">重置问题 3（剩余 <b id="ra-p3">—</b>）</button>
+          <button class="btn" id="btn-reset-p4">重置问题 4（剩余 <b id="ra-p4">—</b>）</button>
+        </div></div>
+    </div>
+
+    <div class="panel">
+      <h3>自定义干扰源案例</h3>
+      <label class="check-line"><input type="checkbox" id="cf-custom-enabled"> 启用自定义案例（覆盖随机生成，演练/正式均生效）</label>
+      <div class="table-wrap" style="max-height:340px">
+        <table class="tbl" id="custom-tbl">
+          <thead><tr><th style="width:86px">类型</th><th style="width:60px">频道</th>
+            <th>x（米）</th><th>y（米）</th><th>接收半径</th><th>定向方向(°)</th><th style="width:36px"></th></tr></thead>
+          <tbody id="custom-tbody"></tbody>
+        </table>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn-add-source">+ 添加干扰源</button>
+        <button class="btn" id="btn-src-case1">载入示例：单源 ch7</button>
+      </div>
+      <p class="dim small">定向方向仅定向类型有效（覆盖 ±90°，含边界）。频道不可重复。</p>
+
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn btn-primary" id="btn-save-settings">保存设置</button>
+        <button class="btn" id="btn-revert-settings">放弃修改</button>
+        <span id="settings-msg" class="dim"></span>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- 通用确认对话框 -->
+<div id="modal-mask" class="modal-mask hidden">
+  <div class="modal">
+    <h3 id="modal-title">确认</h3>
+    <div id="modal-body" class="modal-body"></div>
+    <div class="modal-btns">
+      <button class="btn" id="modal-cancel">取消</button>
+      <button class="btn btn-danger" id="modal-ok">确定</button>
+    </div>
+  </div>
+</div>
+
+<script src="/viz.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
