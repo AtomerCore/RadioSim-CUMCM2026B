@@ -27,8 +27,12 @@ const Viz = (() => {
   let dragging = null;
 
   const opts = {
-    truth: false, coverage: false, rays: false, trail: true, grid: true,
+    truth: true, coverage: false, rays: false, trail: true, grid: true,
   };
+
+  // 干扰源单源显示控制（按频道）：{ [ch]: { coverage: bool?, hidden: bool } }
+  // coverage 为 null/undefined 时跟随全局 vc-coverage；hidden 为真时以幽灵模式淡显
+  let srcOpts = {};
 
   // 点位选中（点击画布查看详情）：{ type: "source"|"event"|"robot", idx?/seq? }
   let selected = null;
@@ -109,6 +113,7 @@ const Viz = (() => {
   function reset() {
     events = []; live = true; playing = false; stopPlay();
     playIdx = 0; selected = null; hideCard();
+    srcOpts = {};
     updateSlider(); draw(); updateStats(null);
   }
   function push(statePayload, newEvents) {
@@ -273,12 +278,24 @@ const Viz = (() => {
     if (!opts.truth || !snapshot || !snapshot.sources) return;
     const clearedSet = clearedNow();
     for (const s of snapshot.sources) {
+      const o = srcOpts[s.channel] || {};
       const c = chColor(s.channel);
       const px = sx(s.x), py = sy(s.y);
       const cleared = clearedSet.has(s.channel);
       ctx.save();
+      if (o.hidden) {
+        // 幽灵模式：极淡圆点，不画覆盖/标签，但保留可点击性以便恢复显示
+        ctx.globalAlpha = 0.16;
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fillStyle = c;
+        ctx.fill();
+        ctx.restore();
+        continue;
+      }
       ctx.globalAlpha = cleared ? 0.45 : 1;
-      if (opts.coverage) {
+      const showCov = o.coverage != null ? o.coverage : opts.coverage;
+      if (showCov) {
         if (s.kind === "omni") {
           ctx.beginPath();
           ctx.arc(px, py, s.recv_radius * view.scale, 0, Math.PI * 2);
@@ -461,9 +478,14 @@ const Viz = (() => {
   const cardTypeEl = document.getElementById("pc-type");
   const cardBodyEl = document.getElementById("pc-body");
 
-  function hideCard() { cardEl.classList.add("hidden"); }
+  function hideCard() { cardEl.classList.add("hidden"); cardKey = null; }
   function clearSelection() { selected = null; hideCard(); draw(); }
   document.getElementById("pc-close").addEventListener("click", clearSelection);
+
+  function setSrcOpt(ch, key, val) {
+    srcOpts[ch] = Object.assign({}, srcOpts[ch]);
+    srcOpts[ch][key] = val;
+  }
 
   function findEventBySeq(seq) {
     return events.find((e) => e.seq === seq) || null;
@@ -512,6 +534,9 @@ const Viz = (() => {
     cardEl.style.top = Math.max(6, y) + "px";
   }
 
+  // 卡片渲染节流：同一目标且关键状态未变时跳过重建，避免轮询期间打断开关交互
+  let cardKey = null;
+
   function renderCard() {
     if (!selected || !snapshot) { hideCard(); return; }
     let title = "", rows = "";
@@ -519,12 +544,36 @@ const Viz = (() => {
       const s = snapshot.sources && snapshot.sources[selected.idx];
       if (!s) { selected = null; hideCard(); return; }
       const cleared = clearedNow().has(s.channel);
+      const key = "src:" + s.channel + ":" + cleared;
+      if (key === cardKey && !cardEl.classList.contains("hidden")) return;
+      cardKey = key;
+      const o = srcOpts[s.channel] || {};
+      const covOn = o.coverage != null ? o.coverage : opts.coverage;
       title = "干扰源 · ch" + s.channel;
       rows = cardRow("类型", s.kind === "directional" ? "定向" : "全向") +
         cardRow("位置", fmtPosW([s.x, s.y])) +
         cardRow("接收半径", fmtN(s.recv_radius, 0) + " m") +
         (s.kind === "directional" ? cardRow("定向方向", fmtN(s.direction_deg, 0) + "°") : "") +
-        cardRow("状态", cleared ? "已清除" : "未清除");
+        cardRow("状态", cleared ? "已清除" : "未清除") +
+        `<div class="pc-toggles">
+          <label class="pc-toggle" title="单独控制该源的覆盖范围（半径/扇形）显示">
+            <input type="checkbox" id="pc-cov"${covOn ? " checked" : ""}>覆盖范围</label>
+          <label class="pc-toggle" title="关闭后以幽灵模式淡显，仍可点击恢复">
+            <input type="checkbox" id="pc-vis"${o.hidden ? "" : " checked"}>显示该源</label>
+        </div>`;
+      cardTypeEl.textContent = title;
+      cardBodyEl.innerHTML = rows;
+      const covEl = cardBodyEl.querySelector("#pc-cov");
+      const visEl = cardBodyEl.querySelector("#pc-vis");
+      covEl.addEventListener("change", () => {
+        setSrcOpt(s.channel, "coverage", covEl.checked);
+        draw();
+      });
+      visEl.addEventListener("change", () => {
+        setSrcOpt(s.channel, "hidden", !visEl.checked);
+        draw();
+      });
+      return;
     } else if (selected.type === "event") {
       const ev = findEventBySeq(selected.seq);
       if (!ev) { selected = null; hideCard(); return; }
