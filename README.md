@@ -535,10 +535,27 @@ cannot be replicated locally, therefore:
   near threshold, clear radius, initial channel, countdown / window /
   program / virtual time limits, formal attempt count, and a custom
   source-case editor. Formal attempt counts can be reset.
-- Extra local aids: a visualization page (live map + replay of the robot,
-  sources, rays and trails), a batch-testing page (automated multi-run
-  testing with aggregated statistics, see above) and an optional "reveal
-  truth" debug switch for formal tests (practice always reveals).
+- Extra local aids: a visualization page, a batch-testing page (automated
+  multi-run testing with aggregated statistics, see above) and an optional
+  "reveal truth" debug switch for formal tests (practice always reveals).
+- **Visualization page**: live map plus event replay (robot, source truth,
+  svd rays, trail and grid; truth and trail are shown by default, detection
+  ranges and rays are off). Clicking any point (source, measure point, clear
+  point, rejected request or the robot) opens a detail card; each source can
+  individually toggle its detection range, svd rays and visibility (a hidden
+  source fades to a ghost that stays clickable); the sidebar global switches
+  bulk-apply to all sources and show an indeterminate checkbox when mixed;
+  the detail card follows its point while panning and zooming, and hides
+  temporarily while the point is out of view.
+- **Settings page**: leaving with unsaved changes raises a three-way dialog
+  (save and leave / discard / stay), marks the tab with a dot, and the
+  browser warns before the page is closed or reloaded.
+- **Admin API hardening**: `/api/*` POST requests must carry
+  `Content-Type: application/json` (otherwise 415), and every request must
+  have a loopback Host header (127.0.0.1 / localhost, otherwise 421),
+  blocking cross-site form posts and DNS rebinding. The robot interface
+  (the four exact paths) is unchanged; browsers and ordinary HTTP clients
+  satisfy these checks automatically.
 
 ## Data Location
 
