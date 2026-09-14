@@ -420,6 +420,10 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .viz-side h3 { margin: 14px 0 7px; font-size: 12px; }
+.viz-side h3 small {
+  font-size: 10px; font-weight: 400; letter-spacing: .5px;
+  color: var(--text-3); margin-left: 6px;
+}
 .viz-side label { display: block; font-size: 12.5px; margin: 5px 0; color: var(--text-2); }
 .viz-stats { font-size: 12px; line-height: 2; color: var(--text-2); }
 .viz-stats b { color: #fff; font-family: var(--mono); font-weight: 600; }
