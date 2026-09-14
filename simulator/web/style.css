@@ -376,7 +376,8 @@ h3::after {
 .pc-body div:last-child { border-bottom: none; }
 .pc-body b { color: var(--text); font-family: var(--mono); font-weight: 600; text-align: right; }
 .pc-toggles {
-  display: flex; gap: 14px; padding-top: 8px; margin-top: 5px;
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  padding-top: 8px; margin-top: 5px;
   border-top: 1px solid rgba(255, 255, 255, .18);
 }
 .pc-toggle {

@@ -30,8 +30,8 @@ const Viz = (() => {
     truth: true, coverage: false, rays: false, trail: true, grid: true,
   };
 
-  // 干扰源单源显示控制（按频道）：{ [ch]: { coverage: bool?, hidden: bool } }
-  // coverage 为 null/undefined 时跟随全局 vc-coverage；hidden 为真时以幽灵模式淡显
+  // 干扰源单源显示控制（按频道）：{ [ch]: { coverage: bool?, rays: bool?, hidden: bool } }
+  // coverage/rays 为 null/undefined 时跟随全局图层开关；hidden 为真时以幽灵模式淡显
   let srcOpts = {};
 
   // 点位选中（点击画布查看详情）：{ type: "source"|"event"|"robot", idx?/seq? }
@@ -188,7 +188,7 @@ const Viz = (() => {
     }
     drawGrid();
     drawSources();
-    if (opts.rays) drawRays();
+    drawRays();   // 内部按全局开关与单源覆盖逐条过滤
     if (opts.trail) drawTrail();
     drawRobot();
     drawSelection();
@@ -356,7 +356,12 @@ const Viz = (() => {
     const st = live ? stateAt(events.length - 1) : stateAt(playIdx - 1);
     const rays = st.rays.slice(-160);   // 最多显示最近 160 条
     const err = snapshot.svd_error_deg || 1;
+    const rayOn = (ch) => {
+      const o = srcOpts[ch];
+      return (o && o.rays != null) ? o.rays : opts.rays;
+    };
     for (const r of rays) {
+      if (!rayOn(r.ch)) continue;
       const c = chColor(r.ch);
       const px = sx(r.x), py = sy(r.y);
       const rad = -r.deg * Math.PI / 180;
@@ -549,6 +554,7 @@ const Viz = (() => {
       cardKey = key;
       const o = srcOpts[s.channel] || {};
       const covOn = o.coverage != null ? o.coverage : opts.coverage;
+      const raysOn = o.rays != null ? o.rays : opts.rays;
       title = "干扰源 · ch" + s.channel;
       rows = cardRow("类型", s.kind === "directional" ? "定向" : "全向") +
         cardRow("位置", fmtPosW([s.x, s.y])) +
@@ -556,17 +562,24 @@ const Viz = (() => {
         (s.kind === "directional" ? cardRow("定向方向", fmtN(s.direction_deg, 0) + "°") : "") +
         cardRow("状态", cleared ? "已清除" : "未清除") +
         `<div class="pc-toggles">
-          <label class="pc-toggle" title="单独控制该源的覆盖范围（半径/扇形）显示">
-            <input type="checkbox" id="pc-cov"${covOn ? " checked" : ""}>覆盖范围</label>
+          <label class="pc-toggle" title="单独控制该源的检测范围（有效接收半径圆 / 定向扇形）显示">
+            <input type="checkbox" id="pc-cov"${covOn ? " checked" : ""}>检测范围</label>
+          <label class="pc-toggle" title="单独控制该频道测得的示向度射线（含 ±误差楔形与检测点）">
+            <input type="checkbox" id="pc-rays"${raysOn ? " checked" : ""}>示向度射线</label>
           <label class="pc-toggle" title="关闭后以幽灵模式淡显，仍可点击恢复">
             <input type="checkbox" id="pc-vis"${o.hidden ? "" : " checked"}>显示该源</label>
         </div>`;
       cardTypeEl.textContent = title;
       cardBodyEl.innerHTML = rows;
       const covEl = cardBodyEl.querySelector("#pc-cov");
+      const raysEl = cardBodyEl.querySelector("#pc-rays");
       const visEl = cardBodyEl.querySelector("#pc-vis");
       covEl.addEventListener("change", () => {
         setSrcOpt(s.channel, "coverage", covEl.checked);
+        draw();
+      });
+      raysEl.addEventListener("change", () => {
+        setSrcOpt(s.channel, "rays", raysEl.checked);
         draw();
       });
       visEl.addEventListener("change", () => {
