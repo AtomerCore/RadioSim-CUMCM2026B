@@ -193,6 +193,7 @@ const Viz = (() => {
     drawRobot();
     drawSelection();
     drawHUD();
+    updateCardPos();
   }
 
   function gridStep() {
@@ -306,9 +307,10 @@ const Viz = (() => {
           ctx.stroke();
           ctx.setLineDash([]);
         } else {
-          // 定向：±90° 扇形
-          const a0 = -(s.direction_deg - 90) * Math.PI / 180;
-          const a1 = -(s.direction_deg + 90) * Math.PI / 180;
+          // 定向：±90° 扇形（起止角从 -(dir+90) 到 -(dir-90)，
+          // 保证扇形朝向 direction_deg 一侧，与方向箭头一致）
+          const a0 = -(s.direction_deg + 90) * Math.PI / 180;
+          const a1 = -(s.direction_deg - 90) * Math.PI / 180;
           ctx.beginPath();
           ctx.moveTo(px, py);
           ctx.arc(px, py, s.recv_radius * view.scale, a0, a1);
@@ -367,10 +369,11 @@ const Viz = (() => {
       const rad = -r.deg * Math.PI / 180;
       const L = 520 * view.scale;
       ctx.save();
-      // ±误差楔形
+      // ±误差楔形（注意起止角顺序：canvas 默认正向扫过增大方向，
+      // 需从 -(deg+err) 画到 -(deg-err)，才是 2err 的短楔形而非几乎整圆）
       ctx.beginPath();
       ctx.moveTo(px, py);
-      const w0 = -(r.deg - err) * Math.PI / 180, w1 = -(r.deg + err) * Math.PI / 180;
+      const w0 = -(r.deg + err) * Math.PI / 180, w1 = -(r.deg - err) * Math.PI / 180;
       ctx.arc(px, py, L, w0, w1);
       ctx.closePath();
       ctx.fillStyle = c; ctx.globalAlpha = 0.08; ctx.fill();
@@ -526,9 +529,7 @@ const Viz = (() => {
     draw();
   }
 
-  function showCard(px, py) {
-    renderCard();
-    cardEl.classList.remove("hidden");
+  function placeCard(px, py) {
     const host = canvas.parentElement;
     const baseX = canvas.offsetLeft + px, baseY = canvas.offsetTop + py;
     const cw = cardEl.offsetWidth, ch = cardEl.offsetHeight;
@@ -537,6 +538,26 @@ const Viz = (() => {
     if (y + ch > host.clientHeight - 6) y = baseY - ch - 14;
     cardEl.style.left = Math.max(6, x) + "px";
     cardEl.style.top = Math.max(6, y) + "px";
+  }
+
+  function showCard(px, py) {
+    renderCard();
+    cardEl.classList.remove("hidden");
+    placeCard(px, py);
+  }
+
+  // 平移/缩放/跟随导致点位在画布内移动时，卡片同步贴附到点旁；
+  // 点被移出视野时暂时隐藏（内容保留），回到视野自动恢复。
+  function updateCardPos() {
+    if (!selected || !snapshot) return;
+    const p = selectedScreenPos();
+    if (!p) return;
+    if (p.x < -24 || p.x > W + 24 || p.y < -24 || p.y > H + 24) {
+      cardEl.classList.add("hidden");
+      return;
+    }
+    cardEl.classList.remove("hidden");
+    placeCard(p.x, p.y);
   }
 
   // 卡片渲染节流：同一目标且关键状态未变时跳过重建，避免轮询期间打断开关交互
@@ -623,21 +644,25 @@ const Viz = (() => {
     cardBodyEl.innerHTML = rows;
   }
 
-  function drawSelection() {
-    if (!selected || !snapshot) return;
-    let px, py;
+  // 选中点在画布内的当前屏幕坐标
+  function selectedScreenPos() {
     if (selected.type === "source") {
       const s = snapshot.sources && snapshot.sources[selected.idx];
-      if (!s) return;
-      px = sx(s.x); py = sy(s.y);
-    } else if (selected.type === "event") {
-      const ev = findEventBySeq(selected.seq);
-      if (!ev || !ev.pos) return;
-      px = sx(ev.pos[0]); py = sy(ev.pos[1]);
-    } else {
-      const r = robotState();
-      px = sx(r.x); py = sy(r.y);
+      return s ? { x: sx(s.x), y: sy(s.y) } : null;
     }
+    if (selected.type === "event") {
+      const ev = findEventBySeq(selected.seq);
+      return (ev && ev.pos) ? { x: sx(ev.pos[0]), y: sy(ev.pos[1]) } : null;
+    }
+    const r = robotState();
+    return { x: sx(r.x), y: sy(r.y) };
+  }
+
+  function drawSelection() {
+    if (!selected || !snapshot) return;
+    const p = selectedScreenPos();
+    if (!p) return;
+    const px = p.x, py = p.y;
     // 实线亮环 + 呼吸脉冲（区别于覆盖范围的虚线圆）
     const t = performance.now() / 1000;
     const pulse = 0.5 + 0.5 * Math.sin(t * 3.2);
