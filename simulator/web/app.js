@@ -52,9 +52,16 @@ function confirmModal(title, body, onOk, opts = {}) {
   modalHandler = { onOk, double: !!opts.double, stage: 1 };
   $("#modal-mask").classList.remove("hidden");
 }
+let modalAltHandler = null;
 function closeModal() {
   $("#modal-mask").classList.add("hidden");
   modalHandler = null;
+  modalAltHandler = null;
+  const ok = $("#modal-ok");
+  ok.textContent = "确定";
+  ok.classList.remove("btn-primary");
+  $("#modal-alt").classList.add("hidden");
+  $("#modal-cancel").textContent = "取消";
 }
 $("#modal-ok").addEventListener("click", () => {
   if (!modalHandler) return;
@@ -67,16 +74,31 @@ $("#modal-ok").addEventListener("click", () => {
   closeModal();
   if (fn) fn();
 });
+$("#modal-alt").addEventListener("click", () => {
+  if (!modalAltHandler) return;
+  const fn = modalAltHandler;
+  closeModal();
+  if (fn) fn();
+});
 $("#modal-cancel").addEventListener("click", closeModal);
 
 /* ---------------------- 标签页 ---------------------- */
-$$(".tab").forEach((tab) => tab.addEventListener("click", () => {
+function switchTab(tab) {
   $$(".tab").forEach((t) => t.classList.remove("active"));
   $$(".tabpane").forEach((p) => p.classList.remove("active"));
   tab.classList.add("active");
   $("#tab-" + tab.dataset.tab).classList.add("active");
   if (tab.dataset.tab === "viz") Viz && Viz.resize();
   if (tab.dataset.tab === "batch") pollBatch();
+}
+$$(".tab").forEach((tab) => tab.addEventListener("click", () => {
+  const leavingSettings =
+    $("#tab-settings").classList.contains("active") && tab.dataset.tab !== "settings";
+  if (leavingSettings && settingsDirty()) {
+    openSettingsGuard(() => switchTab(tab));
+    return;
+  }
+  switchTab(tab);
 }));
 
 /* ---------------------- 轮询 ---------------------- */
@@ -377,6 +399,7 @@ async function loadConfig() {
   configCache = data.config;
   fillSettings(data.config);
   $("#settings-lock").classList.toggle("hidden", !data.active);
+  markSettingsClean();
 }
 function fillSettings(c) {
   $("#cf-port").value = c.port;
@@ -493,20 +516,79 @@ function collectSettings() {
   };
 }
 
-$("#btn-save-settings").addEventListener("click", async () => {
+/* ---------------------- 设置未保存守卫 ---------------------- */
+let savedSettingsSnapshot = null;
+let dirtyTimer = null;
+
+function settingsDirty() {
+  if (savedSettingsSnapshot == null) return false;
+  try { return JSON.stringify(collectSettings()) !== savedSettingsSnapshot; }
+  catch (e) { return false; }
+}
+function markSettingsClean() {
+  try { savedSettingsSnapshot = JSON.stringify(collectSettings()); }
+  catch (e) { savedSettingsSnapshot = null; }
+  refreshSettingsDirty();
+}
+function refreshSettingsDirty() {
+  const dirty = settingsDirty();
+  $("#settings-dirty").classList.toggle("hidden", !dirty);
+  const dot = document.querySelector('.tab[data-tab="settings"] .tab-dot');
+  if (dot) dot.classList.toggle("hidden", !dirty);
+}
+// 表单任意输入/点击后延迟重算脏状态（含删除行、添加干扰源等无 input 事件的操作）
+["input", "change", "click"].forEach((evt) =>
+  $("#tab-settings").addEventListener(evt, () => {
+    if (savedSettingsSnapshot == null) return;
+    clearTimeout(dirtyTimer);
+    dirtyTimer = setTimeout(refreshSettingsDirty, 120);
+  }));
+
+function openSettingsGuard(onLeave) {
+  $("#modal-title").textContent = "设置尚未保存";
+  $("#modal-body").textContent =
+    "当前设置已修改但尚未保存。\n“保存并离开”将先保存再切换；“放弃修改”将恢复为最近保存的值。";
+  const ok = $("#modal-ok");
+  ok.textContent = "保存并离开";
+  ok.classList.remove("btn-danger");
+  ok.classList.add("btn-primary");
+  $("#modal-alt").textContent = "放弃修改";
+  $("#modal-alt").classList.remove("hidden");
+  $("#modal-cancel").textContent = "留在本页";
+  modalHandler = {
+    onOk: async () => { if (await saveSettings()) onLeave(); },
+    double: false, stage: 1,
+  };
+  modalAltHandler = async () => { await loadConfig(); onLeave(); };
+  $("#modal-mask").classList.remove("hidden");
+}
+
+// 关闭/刷新页面前提醒未保存
+window.addEventListener("beforeunload", (e) => {
+  if (settingsDirty()) { e.preventDefault(); e.returnValue = ""; }
+});
+
+async function saveSettings() {
   const msg = $("#settings-msg");
   msg.textContent = "保存中…";
   const r = await apiPost("/api/config", { config: collectSettings() });
-  if (!r.ok) { msg.textContent = ""; confirmModal("保存失败", r.error || "未知错误", null, { danger: false }); return; }
+  if (!r.ok) {
+    msg.textContent = "";
+    confirmModal("保存失败", r.error || "未知错误", null, { danger: false });
+    return false;
+  }
   if (r.port_changed) {
     msg.textContent = "端口已切换，即将跳转…";
     setTimeout(() => { location.href = "http://127.0.0.1:" + r.new_port + "/"; }, 1200);
-    return;
+    return true;
   }
   msg.textContent = "已保存。";
   await loadConfig();
   setTimeout(() => { msg.textContent = ""; }, 2500);
-});
+  return true;
+}
+
+$("#btn-save-settings").addEventListener("click", () => saveSettings());
 $("#btn-revert-settings").addEventListener("click", () => loadConfig());
 
 $("#btn-reset-p3").addEventListener("click", () =>

@@ -8,7 +8,7 @@ const Viz = (() => {
 
   const CHANNEL_COLORS = [];
   for (let i = 0; i < 20; i++) {
-    CHANNEL_COLORS.push(`hsl(${Math.round(i * 360 / 20)}, 72%, 62%)`);
+    CHANNEL_COLORS.push(`hsl(${Math.round(i * 360 / 20)}, 68%, 64%)`);
   }
   const chColor = (ch) => CHANNEL_COLORS[(ch - 1) % 20];
 
@@ -27,8 +27,11 @@ const Viz = (() => {
   let dragging = null;
 
   const opts = {
-    truth: true, coverage: true, rays: true, trail: true, grid: true,
+    truth: false, coverage: false, rays: false, trail: true, grid: true,
   };
+
+  // 点位选中（点击画布查看详情）：{ type: "source"|"event"|"robot", idx?/seq? }
+  let selected = null;
 
   // ---------------- 坐标变换 ----------------
   let W = 0, H = 0, DPR = 1;
@@ -38,6 +41,7 @@ const Viz = (() => {
     canvas.width = Math.round(W * DPR);
     canvas.height = Math.round(H * DPR);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    selected = null; hideCard();
     // 画布隐藏（clientWidth=0）时不初始化视图，等首次可见再适配
     if (W > 0 && H > 0 && !view.inited) fitAll();
     draw();
@@ -104,7 +108,8 @@ const Viz = (() => {
   // ---------------- 对外接口 ----------------
   function reset() {
     events = []; live = true; playing = false; stopPlay();
-    playIdx = 0; updateSlider(); draw(); updateStats(null);
+    playIdx = 0; selected = null; hideCard();
+    updateSlider(); draw(); updateStats(null);
   }
   function push(statePayload, newEvents) {
     for (const ev of newEvents) events.push(ev);
@@ -115,10 +120,15 @@ const Viz = (() => {
   }
   function setSnapshot(snap) {
     snapshot = snap;
+    if (selected && selected.type === "source" &&
+        !(snapshot.sources && snapshot.sources[selected.idx])) {
+      selected = null; hideCard();
+    }
     if (live) {
       if (follow) { const r = robotState(); view.cx = r.x; view.cy = r.y; }
       draw();
     }
+    renderCard();   // 机器狗位置 / 已清除状态可能变化
     updateStats(snap);
     buildLegend();
   }
@@ -160,11 +170,11 @@ const Viz = (() => {
   // ---------------- 绘制 ----------------
   function draw() {
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#0a0f1a";
+    ctx.fillStyle = "#0a0b0f";
     ctx.fillRect(0, 0, W, H);
     if (!snapshot || !(view.scale > 0) || !(W > 0)) {
       if (!snapshot) {
-        ctx.fillStyle = "#8296b8";
+        ctx.fillStyle = "rgba(190,196,208,.45)";
         ctx.font = "15px 'Microsoft YaHei'";
         ctx.textAlign = "center";
         ctx.fillText("暂无测试会话：请在“测试控制”页开始一局测试", W / 2, H / 2);
@@ -176,6 +186,7 @@ const Viz = (() => {
     if (opts.rays) drawRays();
     if (opts.trail) drawTrail();
     drawRobot();
+    drawSelection();
     drawHUD();
   }
 
@@ -197,7 +208,7 @@ const Viz = (() => {
       const y0 = Math.floor(wy(H) / step) * step, y1 = wy(0);
       const nxCols = Math.min(300, Math.floor((x1 - x0) / step));
       const nyRows = Math.min(300, Math.floor((y1 - y0) / step));
-      ctx.strokeStyle = "rgba(90,110,150,.14)";
+      ctx.strokeStyle = "rgba(255,255,255,.05)";
       ctx.lineWidth = 1;
       ctx.beginPath();
       for (let i = 0; i <= nxCols; i++) {
@@ -210,13 +221,13 @@ const Viz = (() => {
       }
       ctx.stroke();
       // 坐标轴
-      ctx.strokeStyle = "rgba(120,150,200,.35)";
+      ctx.strokeStyle = "rgba(255,255,255,.2)";
       ctx.beginPath();
       ctx.moveTo(sx(0), 0); ctx.lineTo(sx(0), H);
       ctx.moveTo(0, sy(0)); ctx.lineTo(W, sy(0));
       ctx.stroke();
       // 坐标标注
-      ctx.fillStyle = "rgba(130,150,190,.55)";
+      ctx.fillStyle = "rgba(255,255,255,.38)";
       ctx.font = "11px Consolas";
       ctx.textAlign = "left";
       for (let i = 0; i <= nxCols; i += 2) {
@@ -228,17 +239,21 @@ const Viz = (() => {
         if (y !== 0) ctx.fillText(String(y), sx(0) + 4, sy(y) - 4);
       }
     }
-    // 目标区域
+    // 目标区域（白色辉光边界）
+    ctx.save();
     ctx.beginPath();
     ctx.arc(sx(0), sy(0), R * view.scale, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(79,140,255,.65)";
-    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = "rgba(255,255,255,.6)";
+    ctx.lineWidth = 1.4;
+    ctx.shadowColor = "rgba(255,255,255,.4)";
+    ctx.shadowBlur = 14;
     ctx.setLineDash([8, 6]);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.restore();
     // 指北针
     const nx = W - 34, ny = 34;
-    ctx.strokeStyle = "#8296b8"; ctx.fillStyle = "#8296b8"; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(nx, ny + 12); ctx.lineTo(nx, ny - 10);
     ctx.lineTo(nx - 4, ny - 3); ctx.moveTo(nx, ny - 10); ctx.lineTo(nx + 4, ny - 3);
@@ -302,16 +317,16 @@ const Viz = (() => {
       ctx.globalAlpha = 1;
       ctx.beginPath();
       ctx.arc(px, py, 6, 0, Math.PI * 2);
-      ctx.fillStyle = cleared ? "#5a6b85" : c;
+      ctx.fillStyle = cleared ? "rgba(255,255,255,.28)" : c;
       ctx.fill();
-      ctx.strokeStyle = "#0a0f1a"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.strokeStyle = "#0a0b0f"; ctx.lineWidth = 1.5; ctx.stroke();
       // 频道标签
       ctx.font = "bold 11px Consolas";
       ctx.textAlign = "center";
-      ctx.fillStyle = cleared ? "#8ea3c4" : "#fff";
+      ctx.fillStyle = cleared ? "rgba(255,255,255,.45)" : "#fff";
       ctx.fillText("ch" + s.channel, px, py - 10);
       if (cleared) {
-        ctx.strokeStyle = "#35c98a"; ctx.lineWidth = 2;
+        ctx.strokeStyle = "#46d68a"; ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(px - 4, py); ctx.lineTo(px - 1, py + 4); ctx.lineTo(px + 5, py - 4);
         ctx.stroke();
@@ -356,7 +371,7 @@ const Viz = (() => {
     const st = live ? stateAt(events.length - 1) : stateAt(playIdx - 1);
     if (st.trail.length < 2) return;
     ctx.save();
-    ctx.strokeStyle = "rgba(240,214,137,.6)";
+    ctx.strokeStyle = "rgba(255,255,255,.5)";
     ctx.lineWidth = 1.6;
     ctx.setLineDash([]);
     ctx.beginPath();
@@ -375,10 +390,10 @@ const Viz = (() => {
     ctx.translate(px, py);
     ctx.rotate(-heading * Math.PI / 180);
     // 阴影
-    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fillStyle = "rgba(0,0,0,.5)";
     ctx.beginPath(); ctx.ellipse(1, 3, 17, 11, 0, 0, Math.PI * 2); ctx.fill();
     // 四条腿
-    ctx.strokeStyle = "#c9a94e"; ctx.lineWidth = 2.4;
+    ctx.strokeStyle = "rgba(220,224,232,.85)"; ctx.lineWidth = 2.4;
     ctx.beginPath();
     ctx.moveTo(-9, -8); ctx.lineTo(-12, -12);
     ctx.moveTo(-3, -8); ctx.lineTo(-3, -13);
@@ -389,25 +404,32 @@ const Viz = (() => {
     ctx.moveTo(3, 8); ctx.lineTo(3, 13);
     ctx.moveTo(9, 8); ctx.lineTo(12, 12);
     ctx.stroke();
-    // 身体
-    ctx.fillStyle = "#ffd166";
-    ctx.strokeStyle = "#6b5416"; ctx.lineWidth = 1.6;
+    // 身体（白色 + 柔和辉光）
+    ctx.shadowColor = "rgba(255,255,255,.55)";
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "#eceef2";
+    ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 1.4;
     ctx.beginPath();
     ctx.roundRect ? ctx.roundRect(-14, -9, 28, 18, 5) : ctx.rect(-14, -9, 28, 18);
     ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
     // 头部（朝向 = x 正方向）
     ctx.beginPath(); ctx.arc(17, 0, 6, 0, Math.PI * 2);
-    ctx.fillStyle = "#ffe6a8"; ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#ffffff"; ctx.fill(); ctx.stroke();
     // 尾部天线
     ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(-21, -6); ctx.stroke();
+    ctx.shadowColor = "rgba(255,255,255,.9)";
+    ctx.shadowBlur = 10;
     ctx.beginPath(); ctx.arc(-21, -6, 2.2, 0, Math.PI * 2);
-    ctx.fillStyle = "#4f8cff"; ctx.fill();
+    ctx.fillStyle = "#ffffff"; ctx.fill();
     ctx.restore();
     // 标签（不随朝向旋转）
     ctx.save();
     ctx.font = "bold 12px 'Microsoft YaHei'";
     ctx.textAlign = "center";
-    ctx.fillStyle = "#ffd166";
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.shadowColor = "rgba(0,0,0,.8)";
+    ctx.shadowBlur = 4;
     ctx.fillText("机器狗 · 频道 " + currentChannel(), px, py - 24);
     ctx.restore();
   }
@@ -419,19 +441,167 @@ const Viz = (() => {
   function drawHUD() {
     ctx.save();
     ctx.font = "11px Consolas";
-    ctx.fillStyle = "rgba(130,150,190,.8)";
+    ctx.fillStyle = "rgba(255,255,255,.55)";
     ctx.textAlign = "left";
     ctx.fillText("比例尺：100 m = " + (100 * view.scale).toFixed(0) + " px", 10, H - 10);
     if (!live) {
-      ctx.fillStyle = "#f0a13c";
+      ctx.fillStyle = "#f2b13d";
       ctx.textAlign = "right";
       ctx.fillText("回放模式", W - 12, H - 10);
     } else if (follow) {
-      ctx.fillStyle = "#35c98a";
+      ctx.fillStyle = "#46d68a";
       ctx.textAlign = "right";
       ctx.fillText("跟随机器狗", W - 12, H - 10);
     }
     ctx.restore();
+  }
+
+  // ---------------- 点位选中与详情卡片 ----------------
+  const cardEl = document.getElementById("point-card");
+  const cardTypeEl = document.getElementById("pc-type");
+  const cardBodyEl = document.getElementById("pc-body");
+
+  function hideCard() { cardEl.classList.add("hidden"); }
+  function clearSelection() { selected = null; hideCard(); draw(); }
+  document.getElementById("pc-close").addEventListener("click", clearSelection);
+
+  function findEventBySeq(seq) {
+    return events.find((e) => e.seq === seq) || null;
+  }
+  const fmtN = (v, d = 1) => (+v).toFixed(d);
+  const fmtPosW = (p) => "(" + fmtN(p[0]) + ", " + fmtN(p[1]) + ") m";
+  const cardRow = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
+
+  function canvasClick(px, py) {
+    if (!snapshot) return;
+    const cands = [];
+    if (opts.truth && snapshot.sources) {
+      snapshot.sources.forEach((s, i) => {
+        const d = Math.hypot(px - sx(s.x), py - sy(s.y));
+        if (d <= 14) cands.push({ type: "source", idx: i, d });
+      });
+    }
+    for (const ev of events) {
+      if (!ev.pos) continue;
+      let d = Math.hypot(px - sx(ev.pos[0]), py - sy(ev.pos[1]));
+      if (d > 12) continue;
+      if (ev.kind === "reject") d += 3;   // 同位置时优先真实指令点
+      cands.push({ type: "event", seq: ev.seq, d });
+    }
+    const rb = robotState();
+    const dr = Math.hypot(px - sx(rb.x), py - sy(rb.y));
+    if (dr <= 22) cands.push({ type: "robot", d: dr - 1.5 });   // 点击机器狗本体时优先选中
+    if (!cands.length) { clearSelection(); return; }
+    cands.sort((a, b) => a.d - b.d);
+    selected = cands[0];
+    showCard(px, py);
+    startSelAnim();
+    draw();
+  }
+
+  function showCard(px, py) {
+    renderCard();
+    cardEl.classList.remove("hidden");
+    const host = canvas.parentElement;
+    const baseX = canvas.offsetLeft + px, baseY = canvas.offsetTop + py;
+    const cw = cardEl.offsetWidth, ch = cardEl.offsetHeight;
+    let x = baseX + 16, y = baseY + 14;
+    if (x + cw > host.clientWidth - 6) x = baseX - cw - 16;
+    if (y + ch > host.clientHeight - 6) y = baseY - ch - 14;
+    cardEl.style.left = Math.max(6, x) + "px";
+    cardEl.style.top = Math.max(6, y) + "px";
+  }
+
+  function renderCard() {
+    if (!selected || !snapshot) { hideCard(); return; }
+    let title = "", rows = "";
+    if (selected.type === "source") {
+      const s = snapshot.sources && snapshot.sources[selected.idx];
+      if (!s) { selected = null; hideCard(); return; }
+      const cleared = clearedNow().has(s.channel);
+      title = "干扰源 · ch" + s.channel;
+      rows = cardRow("类型", s.kind === "directional" ? "定向" : "全向") +
+        cardRow("位置", fmtPosW([s.x, s.y])) +
+        cardRow("接收半径", fmtN(s.recv_radius, 0) + " m") +
+        (s.kind === "directional" ? cardRow("定向方向", fmtN(s.direction_deg, 0) + "°") : "") +
+        cardRow("状态", cleared ? "已清除" : "未清除");
+    } else if (selected.type === "event") {
+      const ev = findEventBySeq(selected.seq);
+      if (!ev) { selected = null; hideCard(); return; }
+      if (ev.kind === "measure") {
+        title = "检测点 · ch" + ev.channel;
+        const res = ev.result === "direction" ? "示向度 " + fmtN(ev.svd, 2) + "°"
+          : ev.result === "near" ? "距离过近" : "无信号";
+        rows = cardRow("虚拟时间", fmtN(ev.vt_s, 1) + " s") +
+          cardRow("位置", fmtPosW(ev.pos)) +
+          cardRow("结果", res) +
+          (ev.result === "direction"
+            ? cardRow("误差范围", "±" + fmtN(snapshot.svd_error_deg || 1, 1) + "°") : "");
+      } else if (ev.kind === "clear") {
+        title = "清除点 · ch" + ev.channel;
+        rows = cardRow("虚拟时间", fmtN(ev.vt_s, 1) + " s") +
+          cardRow("位置", fmtPosW(ev.pos)) +
+          cardRow("结果", ev.result === "success" ? "清除成功" : "范围内无目标");
+      } else {
+        title = "被拒请求 · " + ((ev.path || "").replace("/", "") || "—");
+        rows = cardRow("虚拟时间", fmtN(ev.vt_s, 1) + " s") +
+          cardRow("位置", fmtPosW(ev.pos)) +
+          cardRow("HTTP", ev.http_status != null ? ev.http_status : "—") +
+          cardRow("原因", ev.detail || "rejected");
+      }
+    } else {
+      const r = robotState();
+      title = "机器狗";
+      rows = cardRow("位置", fmtPosW([r.x, r.y])) +
+        cardRow("朝向", fmtN(r.heading == null ? 0 : r.heading, 0) + "°") +
+        cardRow("频道", currentChannel()) +
+        cardRow("阶段", phaseText(snapshot.phase));
+    }
+    cardTypeEl.textContent = title;
+    cardBodyEl.innerHTML = rows;
+  }
+
+  function drawSelection() {
+    if (!selected || !snapshot) return;
+    let px, py;
+    if (selected.type === "source") {
+      const s = snapshot.sources && snapshot.sources[selected.idx];
+      if (!s) return;
+      px = sx(s.x); py = sy(s.y);
+    } else if (selected.type === "event") {
+      const ev = findEventBySeq(selected.seq);
+      if (!ev || !ev.pos) return;
+      px = sx(ev.pos[0]); py = sy(ev.pos[1]);
+    } else {
+      const r = robotState();
+      px = sx(r.x); py = sy(r.y);
+    }
+    // 实线亮环 + 呼吸脉冲（区别于覆盖范围的虚线圆）
+    const t = performance.now() / 1000;
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3.2);
+    ctx.save();
+    ctx.strokeStyle = "#fff";
+    ctx.shadowColor = "rgba(255,255,255,.9)";
+    ctx.shadowBlur = 8 + 8 * pulse;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.arc(px, py, 13, 0, Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255,255,255," + (0.55 - 0.35 * pulse).toFixed(3) + ")";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(px, py, 17 + 5 * pulse, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+
+  // 选中期间的呼吸动画循环（节流约 30fps，无选中时自动停止）
+  let selAnimId = null;
+  let lastSelTick = 0;
+  function selectionTick(ts) {
+    if (!selected) { selAnimId = null; return; }
+    if (!ts || ts - lastSelTick > 33) { lastSelTick = ts || 0; draw(); }
+    selAnimId = requestAnimationFrame(selectionTick);
+  }
+  function startSelAnim() {
+    if (selAnimId == null) selAnimId = requestAnimationFrame(selectionTick);
   }
 
   // ---------------- 侧栏 ----------------
@@ -466,10 +636,10 @@ const Viz = (() => {
   function buildLegend() {
     const el = document.getElementById("viz-legend");
     el.innerHTML = `
-      <div><span class="swatch" style="background:#ffd166"></span>机器狗（当前频道标注于上方）</div>
-      <div><span class="swatch" style="background:hsl(0,72%,62%)"></span>干扰源 · 色环按频道 ch1–ch20 循环</div>
-      <div><span class="swatch" style="background:#35c98a"></span>✓ 已清除</div>
-      <div><span class="swatch" style="background:rgba(240,214,137,.7)"></span>机器狗轨迹</div>
+      <div><span class="swatch" style="background:#eceef2"></span>机器狗（当前频道标注于上方）</div>
+      <div><span class="swatch" style="background:hsl(0,68%,64%)"></span>干扰源 · 色环按频道 ch1–ch20 循环</div>
+      <div><span class="swatch" style="background:#46d68a"></span>✓ 已清除</div>
+      <div><span class="swatch" style="background:rgba(255,255,255,.55)"></span>机器狗轨迹</div>
       <div>检测射线 = 示向度方向（楔形为 ±误差角）</div>
       <div>虚线圆 = 全向覆盖半径；扇形 = 定向 ±90°</div>`;
   }
@@ -487,7 +657,13 @@ const Viz = (() => {
     follow = false;
     draw();
   });
-  window.addEventListener("mouseup", () => {
+  window.addEventListener("mouseup", (e) => {
+    if (dragging) {
+      const dx = e.clientX - dragging.x, dy = e.clientY - dragging.y;
+      // 位移极小视为点击（而非拖拽平移），进入点位命中检测
+      if (dx * dx + dy * dy < 16 && e.target === canvas)
+        canvasClick(e.offsetX, e.offsetY);
+    }
     dragging = null;
     canvas.style.cursor = "grab";
   });
