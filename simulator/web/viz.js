@@ -30,9 +30,39 @@ const Viz = (() => {
     truth: true, coverage: false, rays: false, trail: true, grid: true,
   };
 
-  // 干扰源单源显示控制（按频道）：{ [ch]: { coverage: bool?, rays: bool?, hidden: bool } }
-  // coverage/rays 为 null/undefined 时跟随全局图层开关；hidden 为真时以幽灵模式淡显
+  // 干扰源单源图层状态（按频道，显式值）：{ coverage, rays, hidden }
+  // 右侧栏全局开关 = 批量设置全部源；单源开关只改该源；两者互不粘滞，
+  // 混合状态时全局复选框显示不确定态（indeterminate）
   let srcOpts = {};
+  function srcState(ch) {
+    if (!srcOpts[ch])
+      srcOpts[ch] = { coverage: opts.coverage, rays: opts.rays, hidden: false };
+    return srcOpts[ch];
+  }
+
+  // 依据当前各源状态刷新右侧栏全局复选框（全开=勾选，混合=不确定，全关=空）
+  function syncLayerChecks() {
+    const list = (snapshot && snapshot.sources) || [];
+    const setCk = (id, key) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!list.length) { el.indeterminate = false; return; }
+      const vals = list.map((s) => srcState(s.channel)[key]);
+      el.checked = vals.every(Boolean);
+      el.indeterminate = !el.checked && vals.some(Boolean);
+    };
+    setCk("vc-coverage", "coverage");
+    setCk("vc-rays", "rays");
+  }
+
+  // 全局开关：批量作用于全部源，并刷新打开中的详情卡片
+  function applyLayerToAll(key, val) {
+    Object.keys(srcOpts).forEach((ch) => { srcOpts[ch][key] = val; });
+    cardKey = null;
+    renderCard();
+    syncLayerChecks();
+    draw();
+  }
 
   // 点位选中（点击画布查看详情）：{ type: "source"|"event"|"robot", idx?/seq? }
   let selected = null;
@@ -114,6 +144,7 @@ const Viz = (() => {
     events = []; live = true; playing = false; stopPlay();
     playIdx = 0; selected = null; hideCard();
     srcOpts = {};
+    syncLayerChecks();
     updateSlider(); draw(); updateStats(null);
   }
   function push(statePayload, newEvents) {
@@ -134,6 +165,7 @@ const Viz = (() => {
       draw();
     }
     renderCard();   // 机器狗位置 / 已清除状态可能变化
+    syncLayerChecks();
     updateStats(snap);
     buildLegend();
   }
@@ -279,7 +311,7 @@ const Viz = (() => {
     if (!opts.truth || !snapshot || !snapshot.sources) return;
     const clearedSet = clearedNow();
     for (const s of snapshot.sources) {
-      const o = srcOpts[s.channel] || {};
+      const o = srcState(s.channel);
       const c = chColor(s.channel);
       const px = sx(s.x), py = sy(s.y);
       const cleared = clearedSet.has(s.channel);
@@ -295,8 +327,8 @@ const Viz = (() => {
         continue;
       }
       ctx.globalAlpha = cleared ? 0.45 : 1;
-      const showCov = o.coverage != null ? o.coverage : opts.coverage;
-      if (showCov) {
+      // 检测范围（独立图层：全向虚线圆 / 定向 ±90° 扇形）
+      if (o.coverage) {
         if (s.kind === "omni") {
           ctx.beginPath();
           ctx.arc(px, py, s.recv_radius * view.scale, 0, Math.PI * 2);
@@ -307,8 +339,7 @@ const Viz = (() => {
           ctx.stroke();
           ctx.setLineDash([]);
         } else {
-          // 定向：±90° 扇形（起止角从 -(dir+90) 到 -(dir-90)，
-          // 保证扇形朝向 direction_deg 一侧，与方向箭头一致）
+          // 定向扇形起止角从 -(dir+90) 到 -(dir-90)，保证朝向 direction_deg 一侧
           const a0 = -(s.direction_deg + 90) * Math.PI / 180;
           const a1 = -(s.direction_deg - 90) * Math.PI / 180;
           ctx.beginPath();
@@ -322,15 +353,19 @@ const Viz = (() => {
           ctx.globalAlpha = cleared ? 0.25 : 0.6;
           ctx.lineWidth = 1;
           ctx.stroke();
-          // 定向方向箭头
-          const ad = -s.direction_deg * Math.PI / 180;
-          const L = Math.min(46, s.recv_radius * view.scale * 0.5);
-          ctx.beginPath();
-          ctx.moveTo(px, py);
-          ctx.lineTo(px + Math.cos(ad) * L, py + Math.sin(ad) * L);
-          ctx.globalAlpha = cleared ? 0.3 : 0.8;
-          ctx.stroke();
         }
+      }
+      // 定向朝向箭头：源自身属性，独立于检测范围常显
+      if (s.kind === "directional") {
+        const ad = -s.direction_deg * Math.PI / 180;
+        const L = Math.min(46, s.recv_radius * view.scale * 0.5);
+        ctx.strokeStyle = c;
+        ctx.globalAlpha = cleared ? 0.35 : 0.85;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px + Math.cos(ad) * L, py + Math.sin(ad) * L);
+        ctx.stroke();
       }
       // 源本体
       ctx.globalAlpha = 1;
@@ -358,12 +393,8 @@ const Viz = (() => {
     const st = live ? stateAt(events.length - 1) : stateAt(playIdx - 1);
     const rays = st.rays.slice(-160);   // 最多显示最近 160 条
     const err = snapshot.svd_error_deg || 1;
-    const rayOn = (ch) => {
-      const o = srcOpts[ch];
-      return (o && o.rays != null) ? o.rays : opts.rays;
-    };
     for (const r of rays) {
-      if (!rayOn(r.ch)) continue;
+      if (!srcState(r.ch).rays) continue;
       const c = chColor(r.ch);
       const px = sx(r.x), py = sy(r.y);
       const rad = -r.deg * Math.PI / 180;
@@ -491,8 +522,7 @@ const Viz = (() => {
   document.getElementById("pc-close").addEventListener("click", clearSelection);
 
   function setSrcOpt(ch, key, val) {
-    srcOpts[ch] = Object.assign({}, srcOpts[ch]);
-    srcOpts[ch][key] = val;
+    srcState(ch)[key] = val;
   }
 
   function findEventBySeq(seq) {
@@ -573,9 +603,7 @@ const Viz = (() => {
       const key = "src:" + s.channel + ":" + cleared;
       if (key === cardKey && !cardEl.classList.contains("hidden")) return;
       cardKey = key;
-      const o = srcOpts[s.channel] || {};
-      const covOn = o.coverage != null ? o.coverage : opts.coverage;
-      const raysOn = o.rays != null ? o.rays : opts.rays;
+      const o = srcState(s.channel);
       title = "干扰源 · ch" + s.channel;
       rows = cardRow("类型", s.kind === "directional" ? "定向" : "全向") +
         cardRow("位置", fmtPosW([s.x, s.y])) +
@@ -584,9 +612,9 @@ const Viz = (() => {
         cardRow("状态", cleared ? "已清除" : "未清除") +
         `<div class="pc-toggles">
           <label class="pc-toggle" title="单独控制该源的检测范围（有效接收半径圆 / 定向扇形）显示">
-            <input type="checkbox" id="pc-cov"${covOn ? " checked" : ""}>检测范围</label>
+            <input type="checkbox" id="pc-cov"${o.coverage ? " checked" : ""}>检测范围</label>
           <label class="pc-toggle" title="单独控制该频道测得的示向度射线（含 ±误差楔形与检测点）">
-            <input type="checkbox" id="pc-rays"${raysOn ? " checked" : ""}>示向度射线</label>
+            <input type="checkbox" id="pc-rays"${o.rays ? " checked" : ""}>示向度射线</label>
           <label class="pc-toggle" title="关闭后以幽灵模式淡显，仍可点击恢复">
             <input type="checkbox" id="pc-vis"${o.hidden ? "" : " checked"}>显示该源</label>
         </div>`;
@@ -597,10 +625,12 @@ const Viz = (() => {
       const visEl = cardBodyEl.querySelector("#pc-vis");
       covEl.addEventListener("change", () => {
         setSrcOpt(s.channel, "coverage", covEl.checked);
+        syncLayerChecks();
         draw();
       });
       raysEl.addEventListener("change", () => {
         setSrcOpt(s.channel, "rays", raysEl.checked);
+        syncLayerChecks();
         draw();
       });
       visEl.addEventListener("change", () => {
@@ -727,8 +757,9 @@ const Viz = (() => {
       <div><span class="swatch" style="background:hsl(0,68%,64%)"></span>干扰源 · 色环按频道 ch1–ch20 循环</div>
       <div><span class="swatch" style="background:#46d68a"></span>✓ 已清除</div>
       <div><span class="swatch" style="background:rgba(255,255,255,.55)"></span>机器狗轨迹</div>
-      <div>检测射线 = 示向度方向（楔形为 ±误差角）</div>
-      <div>虚线圆 = 全向覆盖半径；扇形 = 定向 ±90°</div>`;
+      <div>示向度射线（楔形 = ±误差角，按频道着色）</div>
+      <div>虚线圆 = 全向检测范围；扇形 = 定向 ±90° 检测范围</div>
+      <div>箭头 = 定向源朝向（独立于检测范围显示）</div>`;
   }
 
   // ---------------- 交互 ----------------
@@ -796,8 +827,14 @@ const Viz = (() => {
     view.scale = Math.max(0.01, view.scale / 1.3); draw();
   });
   document.getElementById("vc-truth").addEventListener("change", (e) => { opts.truth = e.target.checked; draw(); });
-  document.getElementById("vc-coverage").addEventListener("change", (e) => { opts.coverage = e.target.checked; draw(); });
-  document.getElementById("vc-rays").addEventListener("change", (e) => { opts.rays = e.target.checked; draw(); });
+  document.getElementById("vc-coverage").addEventListener("change", (e) => {
+    opts.coverage = e.target.checked;
+    applyLayerToAll("coverage", opts.coverage);
+  });
+  document.getElementById("vc-rays").addEventListener("change", (e) => {
+    opts.rays = e.target.checked;
+    applyLayerToAll("rays", opts.rays);
+  });
   document.getElementById("vc-trail").addEventListener("change", (e) => { opts.trail = e.target.checked; draw(); });
   document.getElementById("vc-grid").addEventListener("change", (e) => { opts.grid = e.target.checked; draw(); });
 

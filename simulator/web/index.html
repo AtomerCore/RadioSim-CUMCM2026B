@@ -211,11 +211,11 @@
     <aside class="viz-side">
       <h3>图层</h3>
       <label><input type="checkbox" id="vc-truth" checked> 显示干扰源真值</label>
-      <label><input type="checkbox" id="vc-coverage"> 覆盖范围（半径/扇形）</label>
-      <label><input type="checkbox" id="vc-rays"> 检测射线（示向度）</label>
+      <label><input type="checkbox" id="vc-coverage"> 检测范围（半径/扇形）</label>
+      <label><input type="checkbox" id="vc-rays"> 示向度射线（±误差楔形）</label>
       <label><input type="checkbox" id="vc-trail" checked> 机器狗轨迹</label>
       <label><input type="checkbox" id="vc-grid" checked> 网格与坐标轴</label>
-      <div class="dim small" style="margin-top:4px">点击干扰源可单独控制其检测范围、示向度射线与显示</div>
+      <div class="dim small" style="margin-top:4px">检测范围与示向度射线相互独立；全局开关批量作用于全部干扰源，点击单个干扰源可单独控制（混合时全局框显示不定态）</div>
       <h3>视图</h3>
       <div class="btn-row">
         <button class="btn" id="viz-fit">适配全场</button>
