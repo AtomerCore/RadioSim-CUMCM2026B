@@ -530,7 +530,10 @@ const Viz = (() => {
   }
   const fmtN = (v, d = 1) => (+v).toFixed(d);
   const fmtPosW = (p) => "(" + fmtN(p[0]) + ", " + fmtN(p[1]) + ") m";
-  const cardRow = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
+  const escH = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  const cardRow = (k, v) => `<div><span>${escH(k)}</span><b>${escH(v)}</b></div>`;
 
   function canvasClick(px, py) {
     if (!snapshot) return;

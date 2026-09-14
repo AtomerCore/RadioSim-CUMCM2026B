@@ -277,8 +277,22 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     # ---- 路由 ----
+    def _valid_host(self):
+        """Host 头须为本机回环地址（防 DNS 重绑定）。"""
+        host = (self.headers.get("Host") or "").strip().lower()
+        if not host:
+            return False
+        if host.startswith("["):                 # [::1]:port
+            host = host[1:].split("]")[0]
+        else:                                    # 127.0.0.1:port
+            host = host.split(":")[0]
+        return host in ("127.0.0.1", "localhost", "::1")
+
     def _route(self, method):
         try:
+            if not self._valid_host():
+                return self._send_json_status(
+                    421, {"ok": False, "error": "misdirected_request"})
             split = urlsplit(self.path)
             path, query = split.path, split.query
             app = self.server.app
@@ -418,6 +432,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if method == "POST":
+            # 与机器人接口对齐：仅接受 application/json，阻断跨站表单 CSRF
+            ct = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ct != "application/json":
+                return self._send_json(415, {"ok": False,
+                                             "error": "Content-Type 须为 application/json"})
             body = self._read_body()
             try:
                 payload = json.loads(body.decode("utf-8")) if body else {}

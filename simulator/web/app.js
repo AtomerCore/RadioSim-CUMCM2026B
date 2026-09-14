@@ -189,11 +189,11 @@ function renderCmdTable() {
     <tr>
       <td class="plain">${fmtClock(r.t)}</td>
       <td>${(+r.vt).toFixed(r.vt % 1 ? 2 : 0)}</td>
-      <td class="plain">${r.cmd}</td>
-      <td>${r.rid}</td>
+      <td class="plain">${esc(r.cmd)}</td>
+      <td>${esc(r.rid)}</td>
       <td>${r.pos ? fmtPos(r.pos) : "—"}</td>
       <td>${r.ch}</td>
-      <td class="plain ${r.cls}">${r.result}</td>
+      <td class="plain ${r.cls}">${esc(r.result)}</td>
     </tr>`).join("");
   $("#cmd-empty").classList.toggle("hidden", rows.length > 0);
   $("#cmd-count").textContent = rows.length ? "（最近 " + rows.length + " 条，全部记录见日志）" : "";
