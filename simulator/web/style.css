@@ -264,8 +264,8 @@ h3 {
   letter-spacing: .8px; color: var(--text);
 }
 h3::after {
-  content: ""; display: block; width: 22px; height: 1px; margin-top: 5px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, .55), transparent);
+  content: ""; display: block; width: 84px; height: 1px; margin-top: 5px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, .6), transparent);
 }
 
 /* ---------- 计时器 / 状态 ---------- */
